@@ -10,18 +10,26 @@
         body {
             font-family: "Inter", sans-serif; /* Inter Font */
         }
-        /* Simple spinner animation */
-        .spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1);
-            border-left-color: #3B82F6;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
+        /* Canvas styling */
+        #drawingCanvas {
+            border: 2px solid #3B82F6; /* Tailwind Blue 600 */
+            background-color: #F8FAFC; /* Tailwind Soft White */
+            cursor: crosshair;
+            touch-action: none; /* Prevents browser scrolling when drawing */
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        /* Style for the emoji container */
+        #verbEmoji {
+            font-size: 10rem; /* Large size for the emoji */
+            line-height: 1;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 250px; /* Maintain similar height as the image placeholder */
+            background-color: #E0E7FF; /* Light blue background for consistency */
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-lg */
         }
     </style>
 </head>
@@ -31,18 +39,10 @@
 
         <!-- Container for the flashcard and the verb -->
         <div class="flex flex-col items-center justify-center mb-8">
-            <!-- Flashcard image or loading spinner -->
-            <div id="imageContainer" class="relative w-full max-w-full h-auto rounded-xl shadow-lg mb-4" style="min-height: 250px;">
-                <img src="https://placehold.co/400x250/E0E7FF/3B82F6?text=Loading..."
-                     onerror="this.src='https://placehold.co/400x250/E0E7FF/3B82F6?text=Error'"
-                     alt="Image representing the verb"
-                     class="rounded-xl max-w-full h-auto object-cover"
-                     id="verbImage">
-                <div id="loadingSpinner" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 rounded-xl hidden">
-                    <div class="spinner"></div>
-                </div>
+            <!-- Verb Emoji -->
+            <div id="verbEmoji" class="relative rounded-xl shadow-lg mb-4">
+                <!-- Emoji will be displayed here -->
             </div>
-
 
             <div class="flex items-center space-x-4 mb-6 mt-4">
                 <!-- Current verb -->
@@ -58,17 +58,19 @@
 
         <!-- Instructions for the user -->
         <p class="text-xl text-gray-700 mb-8">
-            Draw this action on a piece of paper or your tablet if it has a stylus.
+            Draw this action here:
         </p>
 
-        <!-- Area for drawing upload or "I've Drawn It" button -->
+        <!-- Drawing area with canvas -->
         <div class="mb-8 flex flex-col items-center">
-            <button id="drawnButton" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-full shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-300 mb-4">
-                I've Drawn It!
-            </button>
-            <!-- This could be an image upload area in the future, for now it's just a placeholder -->
-            <div id="drawingArea" class="border-2 border-dashed border-gray-300 rounded-lg p-6 w-full max-w-xs h-32 flex items-center justify-center text-gray-500 italic">
-                (Optional drawing upload area)
+            <canvas id="drawingCanvas" width="300" height="200" class="rounded-lg shadow-md w-full max-w-xs mb-4"></canvas>
+            <div class="flex space-x-4">
+                <button id="clearCanvasButton" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-full shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-red-300">
+                    Clear Drawing
+                </button>
+                <button id="drawnButton" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-full shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-300">
+                    I've Drawn It!
+                </button>
             </div>
         </div>
 
@@ -79,78 +81,135 @@
     </div>
 
     <script>
-        // Array of verbs with their pronunciation
+        // Array of verbs with their pronunciation and corresponding emoji
         const verbs = [
-            { verb: "sing", pronunciation: "/sɪŋ/" },
-            { verb: "read", pronunciation: "/riːd/" },
-            { verb: "dance", pronunciation: "/dæns/" },
-            { verb: "run", pronunciation: "/rʌn/" },
-            { verb: "jump", pronunciation: "/dʒʌmp/" }
+            { verb: "sing", pronunciation: "/sɪŋ/", emoji: "🎤" },
+            { verb: "read", pronunciation: "/riːd/", emoji: "📚" },
+            { verb: "dance", pronunciation: "/dæns/", emoji: "💃" },
+            { verb: "run", pronunciation: "/rʌn/", emoji: "🏃‍♂️" },
+            { verb: "jump", pronunciation: "/dʒʌmp/", emoji: "🤸‍♂️" }
         ];
 
         let currentVerbIndex = 0;
 
-        const verbImage = document.getElementById('verbImage');
-        const loadingSpinner = document.getElementById('loadingSpinner');
+        const verbEmojiElement = document.getElementById('verbEmoji'); // Element to display the emoji
         const currentVerbElement = document.getElementById('currentVerb');
         const pronunciationElement = document.getElementById('pronunciation');
         const pronounceButton = document.getElementById('pronounceButton');
         const drawnButton = document.getElementById('drawnButton');
         const continueButton = document.getElementById('continueButton');
 
+        // Canvas elements
+        const drawingCanvas = document.getElementById('drawingCanvas');
+        const ctx = drawingCanvas.getContext('2d');
+        const clearCanvasButton = document.getElementById('clearCanvasButton');
+
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+
         /**
-         * Generates an image for the given verb using the Imagen API.
-         * @param {string} verb - The verb to generate an image for.
-         * @returns {Promise<string>} A promise that resolves with the base64 image URL.
+         * Adjusts the canvas size to be responsive.
          */
-        async function generateVerbImage(verb) {
-            loadingSpinner.classList.remove('hidden'); // Show spinner
-            verbImage.src = "https://placehold.co/400x250/E0E7FF/3B82F6?text=Generating..."; // Placeholder while generating
+        function resizeCanvas() {
+            // Get the computed style of the canvas's parent to determine available width
+            const parentWidth = drawingCanvas.parentElement.offsetWidth;
+            drawingCanvas.width = Math.min(parentWidth, 300); // Max width of 300px as per current max-w-xs
+            drawingCanvas.height = 200; // Keep height fixed for now
 
-            const prompt = `A simple, clear, and cartoonish drawing of a person ${verb}ing. Focus on the action.`;
-            const payload = { instances: { prompt: prompt }, parameters: { "sampleCount": 1 } };
-            const apiKey = ""; // API key will be provided by the Canvas environment
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
+            // Re-apply drawing styles after resize
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#000'; // Default drawing color
+        }
 
-            try {
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const result = await response.json();
+        // Call resize on initial load and on window resize
+        window.addEventListener('load', resizeCanvas);
+        window.addEventListener('resize', resizeCanvas);
 
-                if (result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
-                    const imageUrl = `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
-                    return imageUrl;
-                } else {
-                    console.error('Image generation failed: No valid image data received.', result);
-                    throw new Error('No image data.');
-                }
-            } catch (error) {
-                console.error('Error generating image:', error);
-                // Fallback image in case of API error
-                return `https://placehold.co/400x250/FFCCCC/CC0000?text=Error+Loading+Image`;
-            } finally {
-                loadingSpinner.classList.add('hidden'); // Hide spinner
-            }
+        /**
+         * Starts drawing.
+         * @param {Event} e - Mouse or touch event.
+         */
+        function startDrawing(e) {
+            isDrawing = true;
+            [lastX, lastY] = getCoordinates(e);
         }
 
         /**
-         * Displays the current verb and generates its image.
+         * Draws a line on the canvas.
+         * @param {Event} e - Mouse or touch event.
          */
-        async function displayCurrentVerb() {
+        function draw(e) {
+            if (!isDrawing) return;
+
+            const [x, y] = getCoordinates(e);
+
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            [lastX, lastY] = [x, y];
+        }
+
+        /**
+         * Stops drawing.
+         */
+        function stopDrawing() {
+            isDrawing = false;
+        }
+
+        /**
+         * Gets mouse or touch coordinates relative to the canvas.
+         * @param {Event} e - Mouse or touch event.
+         * @returns {Array<number>} [x, y] coordinates.
+         */
+        function getCoordinates(e) {
+            const rect = drawingCanvas.getBoundingClientRect();
+            let clientX, clientY;
+
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+
+            return [clientX - rect.left, clientY - rect.top];
+        }
+
+        // Event listeners for drawing
+        drawingCanvas.addEventListener('mousedown', startDrawing);
+        drawingCanvas.addEventListener('mousemove', draw);
+        drawingCanvas.addEventListener('mouseup', stopDrawing);
+        drawingCanvas.addEventListener('mouseout', stopDrawing); // Stop drawing if mouse leaves canvas
+
+        // Touch events for drawing
+        drawingCanvas.addEventListener('touchstart', startDrawing);
+        drawingCanvas.addEventListener('touchmove', draw);
+        drawingCanvas.addEventListener('touchend', stopDrawing);
+        drawingCanvas.addEventListener('touchcancel', stopDrawing);
+
+        /**
+         * Clears the canvas content.
+         */
+        clearCanvasButton.addEventListener('click', () => {
+            ctx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+        });
+
+        /**
+         * Displays the current verb and its emoji.
+         */
+        function displayCurrentVerb() {
             const verbData = verbs[currentVerbIndex];
             currentVerbElement.textContent = verbData.verb;
             pronunciationElement.textContent = verbData.pronunciation;
+            verbEmojiElement.textContent = verbData.emoji; // Set the emoji
 
-            // Generate and display image for the current verb
-            const imageUrl = await generateVerbImage(verbData.verb);
-            verbImage.src = imageUrl;
-
-            // Optional: preloading the next image for a smoother transition
-            // Not preloading images generated by AI as they are dynamic.
-            // Preloading would require generating the next image in advance which might be resource intensive.
+            // Clear the canvas for the new verb
+            ctx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
         }
 
         /**
@@ -189,7 +248,18 @@
             } else {
                 currentVerbElement.textContent = "Activity Complete!";
                 pronunciationElement.textContent = "";
-                verbImage.src = "https://placehold.co/400x250/E0E7FF/3B82F6?text=Finished";
+                verbEmojiElement.textContent = "🎉"; // Final emoji
+                // Disable drawing functionality
+                drawingCanvas.removeEventListener('mousedown', startDrawing);
+                drawingCanvas.removeEventListener('mousemove', draw);
+                drawingCanvas.removeEventListener('mouseup', stopDrawing);
+                drawingCanvas.removeEventListener('mouseout', stopDrawing);
+                drawingCanvas.removeEventListener('touchstart', startDrawing);
+                drawingCanvas.removeEventListener('touchmove', draw);
+                drawingCanvas.removeEventListener('touchend', stopDrawing);
+                drawingCanvas.removeEventListener('touchcancel', stopDrawing);
+                clearCanvasButton.disabled = true;
+
                 pronounceButton.disabled = true;
                 drawnButton.disabled = true;
                 continueButton.disabled = true;
